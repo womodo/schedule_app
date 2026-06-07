@@ -1,0 +1,5 @@
+{
+  "channel_access_token": "LINE Messaging API のチャネルアクセストークン（通知・返信に使用）",
+  "channel_secret": "LINE チャネルシークレット（Webhook署名検証に使用。予定追加機能で必要）",
+  "to": []
+}

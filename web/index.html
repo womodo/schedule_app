@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#ffffff" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="予定表" />
+  <link rel="apple-touch-icon" href="/icons/icon.svg" />
+  <link rel="manifest" href="/manifest.json" />
+  <link rel="stylesheet" href="/css/style.css" />
+  <title>みんなの予定表</title>
+</head>
+<body>
+  <!-- ログイン画面 -->
+  <div id="login-screen" class="screen center" hidden>
+    <form id="login-form" class="login-card">
+      <h1>みんなの予定表</h1>
+      <p class="sub">ログインしてください</p>
+      <input id="login-username" type="text" placeholder="ユーザーID" autocomplete="username" required />
+      <input id="login-password" type="password" placeholder="パスワード" autocomplete="current-password" required />
+      <button type="submit">ログイン</button>
+      <p id="login-error" class="error" hidden>IDまたはパスワードが違います</p>
+    </form>
+  </div>
+
+  <!-- メイン画面 -->
+  <div id="app-screen" class="screen" hidden>
+    <header class="appbar">
+      <div class="appbar-left">
+        <button id="prev-month" class="icon-btn" aria-label="前の月">‹</button>
+        <h2 id="month-label">2026年6月</h2>
+        <button id="next-month" class="icon-btn" aria-label="次の月">›</button>
+        <button id="today-btn" class="text-btn">今日</button>
+      </div>
+      <div class="appbar-right">
+        <span id="sync-status" class="sync-pill" title="同期状態">●</span>
+        <div class="menu-wrap">
+          <button id="menu-btn" class="icon-btn" aria-label="メニュー">☰</button>
+          <div id="menu-dropdown" class="menu-dropdown" hidden>
+            <div id="menu-user" class="menu-user"></div>
+            <button id="menu-admin" class="menu-item" hidden>⚙️ 管理画面</button>
+            <button id="menu-logout" class="menu-item">ログアウト</button>
+          </div>
+        </div>
+      </div>
+    </header>
+
+    <div class="toolbar">
+      <input id="search-input" type="search" placeholder="🔍 検索（タイトル・タグ・場所）" />
+      <div class="filter-row">
+        <div id="people-filter" class="people-filter chips-scroll"></div>
+        <div class="view-toggle">
+          <button id="view-month" class="seg active">カレンダー</button>
+          <button id="view-list" class="seg">一覧</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="list-controls" class="list-controls" hidden>
+      <div class="view-toggle">
+        <button id="lmode-day" class="seg">日</button>
+        <button id="lmode-month" class="seg active">月</button>
+        <button id="lmode-range" class="seg">期間</button>
+      </div>
+      <div id="range-inputs" class="range-inputs" hidden>
+        <input id="range-from" type="date" />
+        <span>〜</span>
+        <input id="range-to" type="date" />
+      </div>
+    </div>
+
+    <div id="weekday-row" class="weekday-row">
+      <span>日</span><span>月</span><span>火</span><span>水</span><span>木</span><span>金</span><span>土</span>
+    </div>
+    <div id="calendar" class="calendar"></div>
+    <div id="list-view" class="list-view" hidden></div>
+
+    <button id="add-btn" class="fab" aria-label="予定を追加">＋</button>
+  </div>
+
+  <!-- 管理画面 -->
+  <div id="admin-screen" class="screen" hidden>
+    <header class="appbar">
+      <div class="appbar-left">
+        <button id="admin-back" class="icon-btn" aria-label="戻る">‹</button>
+        <h2>管理画面</h2>
+      </div>
+    </header>
+    <div class="admin-tabs">
+      <button id="atab-users" class="seg active">ユーザー</button>
+      <button id="atab-tags" class="seg">タグ</button>
+      <button id="atab-export" class="seg">予定CSV</button>
+    </div>
+    <div class="admin-body">
+      <section id="admin-users" class="admin-section">
+        <div id="admin-users-list" class="admin-list"></div>
+        <div class="admin-add">
+          <h4>ユーザーを追加</h4>
+          <input id="nu-username" placeholder="ログインID" autocomplete="off" />
+          <input id="nu-password" type="text" placeholder="初期パスワード" autocomplete="off" />
+          <input id="nu-display" placeholder="表示名" autocomplete="off" />
+          <div class="add-row">
+            <input id="nu-color" type="color" value="#3b82f6" />
+            <label class="ck"><input id="nu-admin" type="checkbox" /> 管理者</label>
+            <button id="nu-add" class="primary">追加</button>
+          </div>
+        </div>
+      </section>
+      <section id="admin-tags" class="admin-section" hidden>
+        <div id="admin-tags-list" class="admin-list"></div>
+        <div class="admin-add">
+          <h4>タグを追加</h4>
+          <div class="add-row">
+            <input id="nt-name" placeholder="タグ名" autocomplete="off" />
+            <input id="nt-color" type="color" value="#64748b" />
+            <button id="nt-add" class="primary">追加</button>
+          </div>
+        </div>
+      </section>
+      <section id="admin-export" class="admin-section" hidden>
+        <div class="admin-add">
+          <h4>予定データのエクスポート</h4>
+          <p class="export-note">登録されている予定（削除済みを除く）をCSVファイルでダウンロードします。Excel などで開けます。</p>
+          <button id="export-csv" class="primary">⬇️ 予定をCSVでダウンロード</button>
+        </div>
+      </section>
+    </div>
+  </div>
+
+  <!-- 予定 追加/編集 モーダル -->
+  <div id="event-modal" class="modal" hidden>
+    <div class="modal-card">
+      <h3 id="modal-title">予定を追加</h3>
+      <form id="event-form">
+        <label>タイトル
+          <input id="ev-title" type="text" required maxlength="100" />
+        </label>
+        <div class="opt-row">
+          <label class="ck"><input id="ev-allday" type="checkbox" /> 終日</label>
+          <label class="ck" title="自分と参加者だけに表示されます"><input id="ev-private" type="checkbox" /> 🔒 非公開</label>
+        </div>
+        <div class="datetime-row">
+          <label>開始
+            <input id="ev-start-date" type="date" required />
+            <input id="ev-start-time" type="time" />
+          </label>
+          <label>終了
+            <input id="ev-end-date" type="date" />
+            <input id="ev-end-time" type="time" />
+          </label>
+        </div>
+        <label>場所
+          <input id="ev-location" type="text" maxlength="100" />
+        </label>
+        <label>タグ（選択 / スペース区切りで入力）
+          <div id="tagbox" class="tagbox">
+            <div id="tagbox-chips" class="tagbox-chips"></div>
+            <input id="tagbox-input" class="tagbox-input" type="text" placeholder="タグを選択・入力" autocomplete="off" />
+            <div id="tagbox-menu" class="tagbox-menu" hidden></div>
+          </div>
+        </label>
+        <label>参加者（選択 / 直接入力。Enterで確定）
+          <div id="partbox" class="tagbox">
+            <div id="partbox-chips" class="tagbox-chips"></div>
+            <input id="partbox-input" class="tagbox-input" type="text" placeholder="参加者を選択・入力" autocomplete="off" />
+            <div id="partbox-menu" class="tagbox-menu" hidden></div>
+          </div>
+        </label>
+        <label>メモ
+          <textarea id="ev-desc" rows="2" maxlength="500"></textarea>
+        </label>
+        <p id="ev-owner" class="owner-line"></p>
+        <div class="modal-actions">
+          <button type="button" id="ev-delete" class="danger" hidden>削除</button>
+          <span class="spacer"></span>
+          <button type="button" id="ev-cancel" class="ghost">キャンセル</button>
+          <button type="submit">保存</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <script src="/js/holidays.js"></script>
+  <script src="/js/db.js"></script>
+  <script src="/js/api.js"></script>
+  <script src="/js/sync.js"></script>
+  <script src="/js/app.js"></script>
+</body>
+</html>

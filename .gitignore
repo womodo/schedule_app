@@ -1,0 +1,14 @@
+# エディタ・端末固有設定
+.claude/settings.local.json
+
+# 機密・実行時生成物
+server/schedule.db
+server/secret.key
+server/line_config.json
+server/certs/
+server/__pycache__/
+*.pyc
+*.log
+.venv/
+venv/
+cookies.txt
