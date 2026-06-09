@@ -81,10 +81,23 @@ mkcert -cert-file cert.pem -key-file key.pem 192.168.1.20 raspberrypi.local loca
 ```
 作成された `rootCA.pem`（`mkcert -CAROOT` の場所）を各スマホ/PCに配り、
 「信頼されたルート証明書」としてインストールします。
-- iPhone: AirDrop等で送る →「設定 > 一般 > VPNとデバイス管理」でインストール →
+
+**配り方：Nginx で配信すると楽**（B構成を使う場合）
+`deploy/nginx-schedule.conf` は `/rootCA.pem` を配信する設定を含んでいます。
+公開していいのは `rootCA.pem` だけなので、`certs/` に**それだけ**コピーします
+（`rootCA-key.pem`〈秘密鍵〉は絶対に置かない／配信しない）。
+```bash
+cp "$(mkcert -CAROOT)/rootCA.pem" ~/schedule_app/server/certs/rootCA.pem
+```
+各端末のブラウザで `https://<ラズパイIP>:8443/rootCA.pem` を開くとダウンロードできます。
+（CA未信頼の初回は証明書警告が出ますが、続行してファイルだけ取得すればOK。
+AirDrop / USB / scp で直接配ってもかまいません。）
+
+インストール手順：
+- iPhone: ダウンロード →「設定 > 一般 > VPNとデバイス管理」でインストール →
   「設定 > 一般 > 情報 > 証明書信頼設定」で **完全に信頼** を有効化
-- Android: 設定 > セキュリティ > 証明書をインストール
-- PC(Chrome/Edge): OSの証明書ストアに取り込み
+- Android: 設定 > セキュリティ > 証明書をインストール（CA証明書）
+- PC(Chrome/Edge): OSの証明書ストアに「信頼されたルート証明機関」として取り込み
 
 **方法B（手早く）: 自己署名でとりあえず動かす**
 ブラウザに警告が出ますが「続行」すれば多くの環境で Service Worker は動きます（iPhone は方法A推奨）。
@@ -134,14 +147,21 @@ sudo systemctl enable --now schedule_app
 journalctl -u schedule_app -f          # ログ確認
 ```
 
-### B. 本番運用（推奨）：Flask + Gunicorn + Nginx（ポート 5001）
-**Gunicorn** がアプリを `127.0.0.1:5001` で動かし、**Nginx** が HTTPS を終端して
+### B. 本番運用（推奨）：Flask + Gunicorn + Nginx（公開ポート 8443）
+**Gunicorn** がアプリを `127.0.0.1:5001`（内部）で動かし、**Nginx** が HTTPS を終端して
 リバースプロキシします（Service Worker に必要な HTTPS は Nginx 側で処理）。
+公開ポートは **8443** で、ブラウザからは `https://<ラズパイIP>:8443/` でアクセスします。
 設定ファイルは `server/` と `deploy/` に同梱済みです。
 
 ```
-[ブラウザ] ──HTTPS(443)──> [Nginx] ──HTTP──> [Gunicorn 127.0.0.1:5001] ── Flask/SQLite
+[ブラウザ] ──HTTPS(8443)──> [Nginx] ──HTTP──> [Gunicorn 127.0.0.1:5001] ── Flask/SQLite
 ```
+
+> **専用ポート 8443 にしている理由**：ラズパイで他のサイトを 80/443 で動かしていても
+> 衝突せず共存できます。`deploy/nginx-schedule.conf` は 8443 のみを使い、
+> `/etc/nginx/sites-enabled/default` の削除も不要です（他サイトに一切触れません）。
+> 80/443 を予定表専用に使ってよい環境なら、`listen 8443 ssl;` を `listen 443 ssl;` に
+> 変えれば `https://<IP>/`（ポート指定なし）でアクセスできます。
 
 **1) Gunicorn を入れる**（A をすでに動かしている場合は止める: `sudo systemctl disable --now schedule_app`）
 ```bash
@@ -165,14 +185,16 @@ journalctl -u schedule-gunicorn -f
 sudo apt install -y nginx
 sudo cp ~/schedule_app/deploy/nginx-schedule.conf /etc/nginx/sites-available/schedule
 sudo ln -sf /etc/nginx/sites-available/schedule /etc/nginx/sites-enabled/schedule
-sudo rm -f /etc/nginx/sites-enabled/default      # 既定サイトを無効化
-sudo nginx -t && sudo systemctl restart nginx
+sudo nginx -t && sudo systemctl reload nginx
+sudo ufw allow 8443/tcp                          # ファイアウォールで 8443 を開放
 ```
-証明書のパス（`ssl_certificate*`）は `deploy/nginx-schedule.conf` 内を環境に合わせて確認。
-ブラウザで `https://<ラズパイIP>/` を開きます（443 → 標準のHTTPSなのでポート指定不要）。
+> **他サイトと共存する構成なので `default` は削除しません**（8443専用で衝突しないため）。
+> 予定表だけを動かすラズパイで 80/443 を使ってよい場合に限り、`nginx-schedule.conf` の
+> `listen 8443 ssl;` を `listen 443 ssl;` に変え、`sudo rm -f /etc/nginx/sites-enabled/default`
+> で既定サイトを無効化してもOKです（その場合は `ufw allow 443/tcp`）。
 
-> 5001 を外部から直接使いたい場合は、`nginx-schedule.conf` の `listen 443 ssl;` を
-> `listen 5001 ssl;` に変えれば `https://<IP>:5001/` でアクセスできます。
+証明書のパス（`ssl_certificate*`）は `deploy/nginx-schedule.conf` 内を環境に合わせて確認。
+ブラウザで `https://<ラズパイIP>:8443/` を開きます。
 
 ---
 
