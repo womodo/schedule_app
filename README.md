@@ -79,25 +79,8 @@ cd ~/schedule_app/server/certs
 # ラズパイのIP（例 192.168.1.20）と .local 名を入れる
 mkcert -cert-file cert.pem -key-file key.pem 192.168.1.20 raspberrypi.local localhost
 ```
-作成された `rootCA.pem`（`mkcert -CAROOT` の場所）を各スマホ/PCに配り、
-「信頼されたルート証明書」としてインストールします。
-
-**配り方：Nginx で配信すると楽**（B構成を使う場合）
-`deploy/nginx-schedule.conf` は `/rootCA.pem` を配信する設定を含んでいます。
-公開していいのは `rootCA.pem` だけなので、`certs/` に**それだけ**コピーします
-（`rootCA-key.pem`〈秘密鍵〉は絶対に置かない／配信しない）。
-```bash
-cp "$(mkcert -CAROOT)/rootCA.pem" ~/schedule_app/server/certs/rootCA.pem
-```
-各端末のブラウザで `https://<ラズパイIP>:8443/rootCA.pem` を開くとダウンロードできます。
-（CA未信頼の初回は証明書警告が出ますが、続行してファイルだけ取得すればOK。
-AirDrop / USB / scp で直接配ってもかまいません。）
-
-インストール手順：
-- iPhone: ダウンロード →「設定 > 一般 > VPNとデバイス管理」でインストール →
-  「設定 > 一般 > 情報 > 証明書信頼設定」で **完全に信頼** を有効化
-- Android: 設定 > セキュリティ > 証明書をインストール（CA証明書）
-- PC(Chrome/Edge): OSの証明書ストアに「信頼されたルート証明機関」として取り込み
+作成された `rootCA.pem`（`mkcert -CAROOT` の場所）を各スマホ/PCに配って
+「信頼されたルート証明書」としてインストールします（→ 配布方法は **1-6**）。
 
 **方法B（手早く）: 自己署名でとりあえず動かす**
 ブラウザに警告が出ますが「続行」すれば多くの環境で Service Worker は動きます（iPhone は方法A推奨）。
@@ -117,6 +100,57 @@ uv run python app.py --ssl     # https://0.0.0.0:8443 で起動
 
 > `--ssl` を付けず `python app.py` だと HTTP(8000) で起動します。動作確認用で、
 > スマホからは Service Worker が無効になります。
+
+### 1-6. ルート証明書（rootCA.pem）を各端末に配布する
+
+方法A（mkcert）を使った場合、各端末に **`rootCA.pem`** を入れて「信頼されたルート証明機関」に
+すると、ブラウザの警告なしで HTTPS / Service Worker が使えます。本番（B構成）の Nginx は
+`/rootCA.pem` を配信する設定（`deploy/nginx-schedule.conf`）を同梱しているので、各端末から
+ブラウザでダウンロードできます。
+
+**⚠️ 公開していいのは `rootCA.pem`（公開鍵側）だけ**です。`rootCA-key.pem`（秘密鍵）は
+これを持つと偽証明書を発行できてしまうため、**`certs/` に置かない・配信しない・コミットしない**。
+
+**1) 配信するファイルを置く**（公開鍵だけ・nginx が読める場所へ）
+ホーム配下（`/home/pi/...`）に置くと nginx ワーカー（`www-data`）がディレクトリを辿れず
+**403 Forbidden** になります。`www-data` が普通に読める `/var/www` に置くのが確実です。
+```bash
+sudo mkdir -p /var/www/ca
+sudo cp "$(mkcert -CAROOT)/rootCA.pem" /var/www/ca/rootCA.pem
+sudo chmod 644 /var/www/ca/rootCA.pem
+ls -l /var/www/ca/                        # rootCA-key.pem が無いことを確認
+```
+
+**2) Nginx の配信設定**（`deploy/nginx-schedule.conf` に同梱済み・抜粋）
+```nginx
+location = /rootCA.pem {
+    alias /var/www/ca/rootCA.pem;
+    default_type application/x-x509-ca-cert;   # Android で「CA証明書として導入」を促す
+    add_header Content-Disposition 'attachment; filename="rootCA.pem"';
+}
+```
+設定を反映（B構成のセットアップ済みなら reload だけ）:
+```bash
+sudo cp ~/schedule_app/deploy/nginx-schedule.conf /etc/nginx/sites-available/schedule
+sudo nginx -t && sudo systemctl reload nginx
+```
+
+**3) 各端末でダウンロード＆インストール**
+ブラウザで次を開く（配信元は `/var/www/ca`。リポジトリ外なので誤コミットの心配なし）:
+```
+https://<ラズパイIP>:8443/rootCA.pem
+```
+> CA をまだ信頼していない初回は証明書警告が出ますが、続行してファイルだけ取得すればOK。
+> うまくいかなければ AirDrop / USB / `scp` で直接配ってもかまいません。
+
+インストール手順：
+- **iPhone**: ダウンロード →「設定 > 一般 > VPNとデバイス管理」でインストール →
+  「設定 > 一般 > 情報 > 証明書信頼設定」で **完全に信頼** を有効化
+- **Android**: 設定 > セキュリティ > 証明書をインストール（CA証明書）
+- **PC(Chrome/Edge)**: OSの証明書ストアに「信頼されたルート証明機関」として取り込み
+
+> 方法B（自己署名）の場合は配布する `rootCA.pem` が無いため、この手順は不要です
+> （各端末でアクセス時に警告を「続行」して使います）。
 
 ---
 
