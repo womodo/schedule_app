@@ -507,12 +507,29 @@ function listItem(ev) {
   const body = document.createElement("div");
   body.className = "list-body";
 
+  const sd = startDate(ev), ed = endDate(ev);
+  const multiDay = sd !== ed;
+  const days = multiDay
+    ? Math.round((new Date(ed + "T00:00") - new Date(sd + "T00:00")) / 86400000) + 1
+    : 1;
+  const st = ev.start && ev.start.length > 10 ? ev.start.slice(11, 16) : "";
+  const et = ev.end && ev.end.length > 10 ? ev.end.slice(11, 16) : "";
+
   const time = document.createElement("div");
-  time.className = "list-time";
-  time.textContent = ev.all_day
-    ? "終日"
-    : (ev.start && ev.start.length > 10 ? ev.start.slice(11, 16) : "") +
-      (ev.end && ev.end.length > 10 ? "〜" + ev.end.slice(11, 16) : "");
+  time.className = "list-time" + (multiDay ? " is-multiday" : "");
+  if (ev.all_day) {
+    time.textContent = multiDay ? `終日　${fmtDay(sd)}〜${fmtDay(ed)}` : "終日";
+  } else if (multiDay) {
+    time.textContent = `${fmtDay(sd)} ${st}`.trim() + "〜" + `${fmtDay(ed)} ${et}`.trim();
+  } else {
+    time.textContent = st + (et ? "〜" + et : "");
+  }
+  if (multiDay) {
+    const badge = document.createElement("span");
+    badge.className = "list-span-badge";
+    badge.textContent = days + "日間";
+    time.appendChild(badge);
+  }
   body.appendChild(time);
 
   const title = document.createElement("div");
