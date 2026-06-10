@@ -1,39 +1,47 @@
-# みんなの予定表（ラズパイ自宅サーバー版）
+# みんなの予定表（ラズパイ自宅サーバー版 / Tailscale）
 
 家族・チームで共有するカレンダーアプリです。Raspberry Pi を Web/DB サーバーにして、
 スマホ（Android / iPhone）・タブレット・PC のブラウザからアクセスします。
-**PWA（Service Worker）** によりオフラインでも閲覧・編集ができ、ネットに戻ると自動同期します。
+**Tailscale（VPN）** で繋ぐので、自宅でも外出先でも同じURLで**本物のサーバーに直結**し、
+誰の編集も**即時に全員へ反映**されます。さらに **PWA（Service Worker）** により、
+圏外や Tailscale 切断時でも閲覧・編集でき、接続が戻ると自動同期します。
 
-- バックエンド: **Python + Flask**
+- バックエンド: **Python + Flask**（Gunicorn 127.0.0.1:5001）
+- 到達経路 / HTTPS: **Tailscale `serve`**（有効な証明書を自動発行・外部に晒さない）
 - DB: **SQLite**（ファイル1つ。バックアップが簡単）
 - フロント: **PWA**（バニラJS・IndexedDB・Service Worker）
 - 認証: **ユーザーごとのログイン**（色分け表示）
 
 ---
 
-## ⚠️ はじめに：この構成の動作範囲（重要）
+## ⚠️ はじめに：この構成の動作範囲
 
-このアプリは **インターネットには公開しません**。Service Worker は「サーバーを外部公開する仕組み」
-ではなく「アプリと予定データを端末内にキャッシュする仕組み」です。したがって動作は次のとおり：
+サーバーは **インターネットには公開しません**。代わりに **Tailscale のプライベートネットワーク**
+（自分のアカウントに参加した端末だけが入れる VPN）でラズパイに繋ぎます。動作は次のとおり：
 
-| 状況 | 閲覧 | 追加・編集（自端末） | 他の人へ反映 |
+| 状況 | 閲覧 | 追加・編集 | 他の人へ反映 |
 |------|:----:|:------:|:------:|
 | 自宅Wi-Fi内 | ✅ | ✅ | ✅ 即時 |
-| 外出中（自宅ネット外） | ✅（最後に見た内容） | ✅（端末に保存・キューに蓄積） | ⏳ **自宅に戻った時に自動同期** |
+| 外出中・**Tailscale ON** | ✅ | ✅ | ✅ **即時** |
+| 圏外 / Tailscale OFF | ✅（最後に見た内容） | ✅（端末に保存・キューに蓄積） | ⏳ 接続復帰時に自動同期 |
 
-> 外出先でも「即・全員に反映」したい場合は、末尾の「**外出先からもリアルタイム同期したい場合**」を参照
-> （Cloudflare Tunnel / Tailscale を足すだけ。アプリ側の変更は不要）。
+> Tailscale が繋がっていれば外出先でも自宅と全く同じ＝即同期です。完全オフライン時だけ
+> PWA のキャッシュにフォールバックし、戻ったときに自動で同期します。
 
-### もう一つの必須事項：HTTPS
-Service Worker は **HTTPS（または localhost）でしか動きません**。`http://192.168.x.x` では登録されません。
-そのため LAN 内でも **自己署名証明書で HTTPS 化**します（下記手順）。
+### HTTPS について（重要・でも簡単）
+Service Worker は **HTTPS（または localhost）でしか動きません**。Tailscale の `serve` を使うと
+`https://<ホスト名>.<テイルネット>.ts.net/` という**正規の有効な証明書付き URL**が自動で用意され、
+証明書の自作（mkcert / 自己署名）も各端末へのルート証明書配布も**一切不要**です。
 
 ---
 
 ## 1. ラズパイ側のセットアップ
 
 ### 1-1. ファイルを配置
-このフォルダ一式をラズパイの `~/schedule_app` などに置きます（scp や git で転送）。
+このフォルダ一式をラズパイの `~/schedule_app` などに置きます（git clone か scp で転送）。
+```bash
+cd ~ && git clone https://github.com/womodo/schedule_app.git
+```
 
 ### 1-2. Python と依存パッケージ（uv で管理）
 Python・仮想環境・依存パッケージは [uv](https://docs.astral.sh/uv/) で管理します。
@@ -47,10 +55,9 @@ source ~/.bashrc                     # PATH を反映（または再ログイン
 cd ~/schedule_app/server
 uv python install 3.12               # uv 管理の Python を用意
 uv venv --python 3.12                # .venv を作成（uv 管理の Python を使用）
-uv pip install -r requirements.txt   # 依存をインストール
+uv pip install -r requirements.txt   # 依存をインストール（gunicorn を含む）
 ```
 > `.venv/` は uv が作成するため、後述の systemd / cron の `.venv/bin/...` のパスはそのまま使えます。
-> コマンドは `uv run <cmd>`（例: `uv run python manage.py ...`）でも、`.venv` を直接呼んでも実行できます。
 
 ### 1-3. ユーザー（家族）を登録
 ```bash
@@ -64,186 +71,78 @@ uv run python manage.py listusers          # 確認
 uv run python manage.py passwd papa newpass # パスワード変更
 ```
 
-### 1-4. HTTPS 証明書を用意（Service Worker に必須）
-
-**方法A（推奨）: mkcert で「信頼される」証明書を作る**
-警告が出ず、iPhone でも快適です。各端末にルート証明書をインストールします。
+### 1-4. Tailscale を入れる
 ```bash
-sudo apt install -y libnss3-tools
-# mkcert を入手（ARM用バイナリ）
-curl -JLO "https://dl.filippo.io/mkcert/latest?for=linux/arm64"
-chmod +x mkcert-v*-linux-arm64 && sudo mv mkcert-v*-linux-arm64 /usr/local/bin/mkcert
-mkcert -install
-mkdir -p ~/schedule_app/server/certs
-cd ~/schedule_app/server/certs
-# ラズパイのIP（例 192.168.1.20）と .local 名を入れる
-mkcert -cert-file cert.pem -key-file key.pem 192.168.1.20 raspberrypi.local localhost
+curl -fsSL https://tailscale.com/install.sh | sh
+sudo tailscale up                    # 表示されるURLをブラウザで開き、自分のアカウントで認証
+tailscale status                     # このラズパイの Tailscale 名 / IP を確認
 ```
-作成された `rootCA.pem`（`mkcert -CAROOT` の場所）を各スマホ/PCに配って
-「信頼されたルート証明書」としてインストールします（→ 配布方法は **1-6**）。
+- 無料プラン（Personal）で家族の端末は十分まかなえます。
+- 管理コンソール [https://login.tailscale.com/admin/dns](https://login.tailscale.com/admin/dns) で
+  **MagicDNS** を ON、**HTTPS Certificates（Enable HTTPS）** を ON にしておきます
+  （`serve` が正規証明書を発行するために必要）。
 
-**方法B（手早く）: 自己署名でとりあえず動かす**
-ブラウザに警告が出ますが「続行」すれば多くの環境で Service Worker は動きます（iPhone は方法A推奨）。
-```bash
-mkdir -p ~/schedule_app/server/certs && cd ~/schedule_app/server/certs
-openssl req -x509 -newkey rsa:2048 -nodes -keyout key.pem -out cert.pem -days 3650 \
-  -subj "/CN=schedule" \
-  -addext "subjectAltName=IP:192.168.1.20,DNS:raspberrypi.local,DNS:localhost"
-```
-
-### 1-5. 起動（動作確認用の簡易サーバー）
-```bash
-cd ~/schedule_app/server
-uv run python app.py --ssl     # https://0.0.0.0:8443 で起動
-```
-ブラウザで `https://192.168.1.20:8443` を開きログイン。
-
-> `--ssl` を付けず `python app.py` だと HTTP(8000) で起動します。動作確認用で、
-> スマホからは Service Worker が無効になります。
-
-### 1-6. ルート証明書（rootCA.pem）を各端末に配布する
-
-方法A（mkcert）を使った場合、各端末に **`rootCA.pem`** を入れて「信頼されたルート証明機関」に
-すると、ブラウザの警告なしで HTTPS / Service Worker が使えます。本番（B構成）の Nginx は
-`/rootCA.pem` を配信する設定（`deploy/nginx-schedule.conf`）を同梱しているので、各端末から
-ブラウザでダウンロードできます。
-
-**⚠️ 公開していいのは `rootCA.pem`（公開鍵側）だけ**です。`rootCA-key.pem`（秘密鍵）は
-これを持つと偽証明書を発行できてしまうため、**`certs/` に置かない・配信しない・コミットしない**。
-
-**1) 配信するファイルを置く**（公開鍵だけ・nginx が読める場所へ）
-ホーム配下（`/home/pi/...`）に置くと nginx ワーカー（`www-data`）がディレクトリを辿れず
-**403 Forbidden** になります。`www-data` が普通に読める `/var/www` に置くのが確実です。
-```bash
-sudo mkdir -p /var/www/ca
-sudo cp "$(mkcert -CAROOT)/rootCA.pem" /var/www/ca/rootCA.pem
-sudo chmod 644 /var/www/ca/rootCA.pem
-ls -l /var/www/ca/                        # rootCA-key.pem が無いことを確認
-```
-
-**2) Nginx の配信設定**（`deploy/nginx-schedule.conf` に同梱済み・抜粋）
-```nginx
-location = /rootCA.pem {
-    alias /var/www/ca/rootCA.pem;
-    default_type application/x-x509-ca-cert;   # Android で「CA証明書として導入」を促す
-    add_header Content-Disposition 'attachment; filename="rootCA.pem"';
-}
-```
-設定を反映（B構成のセットアップ済みなら reload だけ）:
-```bash
-sudo cp ~/schedule_app/deploy/nginx-schedule.conf /etc/nginx/sites-available/schedule
-sudo nginx -t && sudo systemctl reload nginx
-```
-
-**3) 各端末でダウンロード＆インストール**
-ブラウザで次を開く（配信元は `/var/www/ca`。リポジトリ外なので誤コミットの心配なし）:
-```
-https://<ラズパイIP>:8443/rootCA.pem
-```
-> CA をまだ信頼していない初回は証明書警告が出ますが、続行してファイルだけ取得すればOK。
-> うまくいかなければ AirDrop / USB / `scp` で直接配ってもかまいません。
-
-インストール手順：
-- **iPhone**: ダウンロード →「設定 > 一般 > VPNとデバイス管理」でインストール →
-  「設定 > 一般 > 情報 > 証明書信頼設定」で **完全に信頼** を有効化
-- **Android**: 設定 > セキュリティ > 証明書をインストール（CA証明書）
-- **PC(Chrome/Edge)**: OSの証明書ストアに「信頼されたルート証明機関」として取り込み
-
-> 方法B（自己署名）の場合は配布する `rootCA.pem` が無いため、この手順は不要です
-> （各端末でアクセス時に警告を「続行」して使います）。
+> このラズパイのフル DNS 名は `<ホスト名>.<テイルネット名>.ts.net`（例 `raspi3.tailXXXX.ts.net`）。
+> `tailscale serve status`（1-6）に表示される URL がそのままアクセス先になります。
 
 ---
 
-## 2. 自動起動（systemd でサービス化）
-
-運用方法は2通り。**家庭利用は B（Gunicorn + Nginx）を推奨**します。
-
-### A. 簡易（開発サーバーをそのまま自動起動）
-`/etc/systemd/system/schedule_app.service`（パス・ユーザー名は環境に合わせて変更）:
-```ini
-[Unit]
-Description=Schedule App (Flask)
-After=network.target
-
-[Service]
-User=pi
-WorkingDirectory=/home/pi/schedule_app/server
-ExecStart=/home/pi/schedule_app/server/.venv/bin/python app.py --ssl
-Restart=always
-RestartSec=3
-
-[Install]
-WantedBy=multi-user.target
-```
-```bash
-sudo systemctl daemon-reload
-sudo systemctl enable --now schedule_app
-journalctl -u schedule_app -f          # ログ確認
-```
-
-### B. 本番運用（推奨）：Flask + Gunicorn + Nginx（公開ポート 8443）
-**Gunicorn** がアプリを `127.0.0.1:5001`（内部）で動かし、**Nginx** が HTTPS を終端して
-リバースプロキシします（Service Worker に必要な HTTPS は Nginx 側で処理）。
-公開ポートは **8443** で、ブラウザからは `https://<ラズパイIP>:8443/` でアクセスします。
-設定ファイルは `server/` と `deploy/` に同梱済みです。
+## 2. アプリを動かす（Gunicorn + tailscale serve）
 
 ```
-[ブラウザ] ──HTTPS(8443)──> [Nginx] ──HTTP──> [Gunicorn 127.0.0.1:5001] ── Flask/SQLite
+[各端末のブラウザ] ──Tailscale(HTTPS/443・正規証明書)──> [ラズパイ tailscale serve]
+                                                          └─> [Gunicorn 127.0.0.1:5001] ── Flask/SQLite
 ```
+Gunicorn はループバック（127.0.0.1:5001）だけで待ち受け、外には一切晒しません。
+Tailscale の `serve` が VPN 内に対してのみ HTTPS を終端し、Gunicorn へ転送します。
 
-> **専用ポート 8443 にしている理由**：ラズパイで他のサイトを 80/443 で動かしていても
-> 衝突せず共存できます。`deploy/nginx-schedule.conf` は 8443 のみを使い、
-> `/etc/nginx/sites-enabled/default` の削除も不要です（他サイトに一切触れません）。
-> 80/443 を予定表専用に使ってよい環境なら、`listen 8443 ssl;` を `listen 443 ssl;` に
-> 変えれば `https://<IP>/`（ポート指定なし）でアクセスできます。
-
-**1) Gunicorn を入れる**（A をすでに動かしている場合は止める: `sudo systemctl disable --now schedule_app`）
+### 2-1. Gunicorn を systemd 登録（自動起動）
+同梱の `deploy/schedule-gunicorn.service` を使います（パス・ユーザー名は環境に合わせて確認）。
 ```bash
 cd ~/schedule_app/server
-uv pip install -r requirements.txt        # gunicorn を含む
-uv run gunicorn -c gunicorn.conf.py wsgi:app  # 単体テスト（Ctrl+C で停止）
-```
-> ポートは `server/gunicorn.conf.py` の `bind = "127.0.0.1:5001"` で指定しています。
-> systemd は `.venv/bin/gunicorn` を直接呼ぶため、uv で作った `.venv` のまま動きます。
+uv run gunicorn -c gunicorn.conf.py wsgi:app   # まず手動テスト（Ctrl+C で停止）
 
-**2) Gunicorn を systemd 登録**（同梱の `deploy/schedule-gunicorn.service` を使用）
-```bash
 sudo cp ~/schedule_app/deploy/schedule-gunicorn.service /etc/systemd/system/
 sudo systemctl daemon-reload
 sudo systemctl enable --now schedule-gunicorn
-journalctl -u schedule-gunicorn -f
+journalctl -u schedule-gunicorn -f             # ログ確認
 ```
+> ポートは `server/gunicorn.conf.py` の `bind = "127.0.0.1:5001"` で指定。
+> systemd は `.venv/bin/gunicorn` を直接呼ぶため、uv で作った `.venv` のまま動きます。
 
-**3) Nginx を入れて設定**（同梱の `deploy/nginx-schedule.conf` を使用）
+### 2-2. tailscale serve で公開（VPN内のみ・HTTPS）
 ```bash
-sudo apt install -y nginx
-sudo cp ~/schedule_app/deploy/nginx-schedule.conf /etc/nginx/sites-available/schedule
-sudo ln -sf /etc/nginx/sites-available/schedule /etc/nginx/sites-enabled/schedule
-sudo nginx -t && sudo systemctl reload nginx
-sudo ufw allow 8443/tcp                          # ファイアウォールで 8443 を開放
+sudo tailscale serve --bg 5001        # https://<host>.ts.net/ → 127.0.0.1:5001 を常駐で転送
+sudo tailscale serve status           # 公開URLと転送先を確認
 ```
-> **他サイトと共存する構成なので `default` は削除しません**（8443専用で衝突しないため）。
-> 予定表だけを動かすラズパイで 80/443 を使ってよい場合に限り、`nginx-schedule.conf` の
-> `listen 8443 ssl;` を `listen 443 ssl;` に変え、`sudo rm -f /etc/nginx/sites-enabled/default`
-> で既定サイトを無効化してもOKです（その場合は `ufw allow 443/tcp`）。
+- `--bg` で tailscaled に常駐登録されるため、**再起動後も自動で復活**します（serve 用の systemd 登録は不要）。
+- 解除したいときは `sudo tailscale serve --https=443 off`。
 
-証明書のパス（`ssl_certificate*`）は `deploy/nginx-schedule.conf` 内を環境に合わせて確認。
-ブラウザで `https://<ラズパイIP>:8443/` を開きます。
+ブラウザで `https://<ホスト名>.<テイルネット名>.ts.net/` を開いてログインできれば完了です。
+
+> **ファイアウォール**: Tailscale 経由なので、ルーターのポート開放は不要。ufw を使っていても
+> `tailscale0` インターフェイス経由のため通常そのまま通ります（必要なら `sudo ufw allow in on tailscale0`）。
 
 ---
 
-## 3. スマホ／PCでの使い方（ホーム画面に追加 = アプリ化）
+## 3. スマホ／PCでの使い方（Tailscale 参加 → ホーム画面に追加）
 
-1. ラズパイのアドレス（例 `https://192.168.1.20:8443`）をブラウザで開く
-2. ログイン
+各端末を**同じ Tailscale アカウント**に参加させてから、ブラウザでアプリを開きます。
+
+1. **Tailscale アプリを入れて同じアカウントでログイン**
+   - iPhone / Android: App Store / Google Play で「Tailscale」を入れてサインイン
+   - PC(Windows/Mac): [tailscale.com/download](https://tailscale.com/download) からインストール
+2. ブラウザで `https://<ホスト名>.<テイルネット名>.ts.net/` を開く → アプリにログイン
 3. **ホーム画面に追加**してアプリのように使う
    - iPhone(Safari): 共有ボタン →「ホーム画面に追加」
    - Android(Chrome): メニュー →「アプリをインストール」/「ホーム画面に追加」
    - PC(Chrome/Edge): アドレスバーのインストールアイコン
 
-ホーム画面アイコンから起動すると全画面のアプリとして動き、オフラインでも開けます。
+ホーム画面アイコンから起動すると全画面のアプリとして動き、Tailscale が繋がっていれば即同期、
+圏外でもキャッシュから開けます。
 
-> 端末ごとに **一度は自宅Wi-Fiでログイン＆データ取得**しておくと、外出先でもキャッシュから開けます。
+> 端末ごとに **一度はオンラインでログイン＆データ取得**しておくと、オフラインでも開けます。
+> Tailscale はバックグラウンドで繋がりっぱなしにできるので、普段は意識せず使えます。
 
 ---
 
@@ -317,14 +216,27 @@ crontab -e
 
 LINE にメッセージを送ると予定を登録できます（例：「明日 15:00 歯医者」）。
 
-> **⚠️ 外部公開が必要**：通知（送信）と違い、追加（受信）は LINE 側から
-> サーバーへ届く **Webhook** を使うため、**公開HTTPS（正規CAの有効な証明書）**が必須です。
-> 自己署名証明書は不可。**Cloudflare Tunnel（無料）**での公開を推奨します（→ 7章）。
+> **⚠️ ここだけは公開が必要**：通知（送信）と違い、追加（受信）は LINE のサーバーから
+> こちらへ届く **Webhook** なので、Tailscale（プライベート）の中だけでは受け取れません。
+> **公開HTTPS（正規CAの有効な証明書）**が必要です。次のどちらかで公開します。
 
-### 6-1. Webhook URL を公開して設定
-1. Cloudflare Tunnel 等で `https://your-domain/` を Nginx(→Gunicorn) に向ける（7章）
+**方法A: Tailscale Funnel（追加ツール不要）**
+`serve` を「VPN内のみ」から「インターネット公開」に切り替える機能です。アプリ全体を公開
+したくないので、**Webhook のパスだけ**を Funnel で出します。
+```bash
+sudo tailscale funnel --bg --set-path /api/line/webhook http://127.0.0.1:5001/api/line/webhook
+sudo tailscale funnel status
+```
+公開URLは `https://<ホスト名>.<テイルネット名>.ts.net/api/line/webhook` になります。
+（管理コンソールで Funnel の利用許可が必要な場合があります。）
+
+**方法B: Cloudflare Tunnel（無料・独自ドメイン可）**
+ラズパイに `cloudflared` を入れ、`https://your-domain/` を 127.0.0.1:5001 に向けます。
+
+### 6-1. Webhook URL を設定
+1. 上記AまたはBで Webhook を公開
 2. [LINE Developers](https://developers.line.biz/) のチャネル → 「Messaging API設定」で
-   **Webhook URL** に `https://your-domain/api/line/webhook` を設定し、**Webhookの利用をオン**
+   **Webhook URL** に公開した `.../api/line/webhook` を設定し、**Webhookの利用をオン**
 3. 「検証」ボタンで疎通確認（成功＝200が返る）
 4. **応答メッセージ（自動応答）はオフ**にしておくと邪魔になりません
 
@@ -366,17 +278,14 @@ LINE にメッセージを送ると予定を登録できます（例：「明日
 
 ---
 
-## 7. 外出先からもリアルタイム同期したい場合（任意の拡張）
+## 補足：Tailscale を使わずローカルだけで試す（開発用）
 
-アプリのコードは変えずに、ラズパイへの到達経路を足すだけです。
-
-- **Tailscale（VPN・最も安全）**: ラズパイと各端末に Tailscale を入れ、VPN内のIPでアクセス。
-  外部公開せずどこからでも本物のサーバーに繋がるので、外出先でも即同期。
-- **Cloudflare Tunnel（無料・固定IP/ポート開放不要）**: ラズパイに `cloudflared` を入れて
-  `https://yourname.example.com` のような固定URLで公開。HTTPSも自動なので、その場合は
-  自己署名証明書も不要になります。
-
-どちらを足しても、アプリは同じURL運用に切り替えるだけでそのまま動きます。
+ラズパイ上やPCで手早く動作確認したいときは、開発サーバーをそのまま起動できます。
+```bash
+cd ~/schedule_app/server
+uv run python app.py            # http://127.0.0.1:8000（localhost なので Service Worker も可）
+```
+スマホ等の別端末から HTTPS で使う本番アクセスは、上記の **Tailscale serve** が前提です。
 
 ---
 
@@ -385,7 +294,7 @@ LINE にメッセージを送ると予定を登録できます（例：「明日
 ```
 schedule_app/
 ├── server/
-│   ├── app.py            Flask本体（API + PWA配信 + 開発用HTTPS起動）
+│   ├── app.py            Flask本体（API + PWA配信 + 開発用起動）
 │   ├── wsgi.py           Gunicorn用WSGIエントリ（init_db + ProxyFix）
 │   ├── gunicorn.conf.py  Gunicorn設定（bind=127.0.0.1:5001）
 │   ├── manage.py         ユーザー管理CLI（adduser/listusers/passwd/setadmin/deluser）
@@ -393,11 +302,9 @@ schedule_app/
 │   ├── line_parse.py     LINEメッセージ→予定の解析（Webhookで使用）
 │   ├── line_config.json  LINE設定（token/secret。自分で作成。gitには含めない）
 │   ├── schema.sql        SQLiteスキーマ
-│   ├── requirements.txt
-│   └── certs/            HTTPS証明書（自分で生成。gitには含めない）
+│   └── requirements.txt
 ├── deploy/
-│   ├── schedule-gunicorn.service  Gunicorn の systemd ユニット
-│   └── nginx-schedule.conf        Nginx リバースプロキシ設定（HTTPS終端）
+│   └── schedule-gunicorn.service  Gunicorn の systemd ユニット
 ├── web/
 │   ├── index.html        画面
 │   ├── manifest.json     PWA設定
