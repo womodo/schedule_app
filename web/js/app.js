@@ -212,15 +212,21 @@ function allTagOptions() {
 function visibleEvents() {
   const q = state.search.trim().toLowerCase();
   return state.events.filter((ev) => {
-    // 人フィルタ: 作成者＋参加者のうち実ユーザーで、1人でも表示中なら出す
+    // 検索中は人フィルタを無視して全体から探す（参加者名でも見つけられるように）
+    if (q) {
+      const tags = (ev.tags || []).join(" ");
+      // 参加者・作成者の名前でも検索可（ユーザーIDは表示名へ、自由入力はそのまま）
+      const partNames = (ev.participants || [])
+        .map((v) => (state.users[v] ? state.users[v].display_name : v))
+        .join(" ");
+      const ownerName = state.users[ev.owner_id] ? state.users[ev.owner_id].display_name : "";
+      const hay = `${ev.title} ${ev.description || ""} ${ev.location || ""} ${tags} ${ownerName} ${partNames}`.toLowerCase();
+      return hay.includes(q);
+    }
+    // 非検索時の人フィルタ: 作成者＋参加者のうち実ユーザーで、1人でも表示中なら出す
     // （自由入力の参加者はチップが無くフィルタ対象外なので除外）
     const people = [ev.owner_id, ...(ev.participants || [])].filter((id) => state.users[id]);
     if (people.length && people.every((id) => state.hiddenUsers.has(id))) return false;
-    if (q) {
-      const tags = (ev.tags || []).join(" ");
-      const hay = `${ev.title} ${ev.description || ""} ${ev.location || ""} ${tags}`.toLowerCase();
-      if (!hay.includes(q)) return false;
-    }
     return true;
   });
 }
