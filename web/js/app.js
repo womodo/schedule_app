@@ -72,7 +72,7 @@ function bindSwipe(el, onSwipe) {
 // 起動
 // ===========================================================================
 async function start() {
-  registerServiceWorker();
+  cleanupServiceWorker();
   Sync.onChange(updateSyncStatus);
   Sync.start();
 
@@ -103,11 +103,16 @@ async function start() {
   }
 }
 
-function registerServiceWorker() {
+// Service Worker は廃止。過去に登録された SW を解除し、PWAキャッシュを削除する。
+function cleanupServiceWorker() {
   if ("serviceWorker" in navigator) {
-    navigator.serviceWorker.register("/service-worker.js").catch((e) =>
-      console.warn("SW登録失敗（HTTPSが必要です）:", e)
-    );
+    navigator.serviceWorker
+      .getRegistrations()
+      .then((regs) => regs.forEach((r) => r.unregister()))
+      .catch(() => {});
+  }
+  if (self.caches && caches.keys) {
+    caches.keys().then((keys) => keys.forEach((k) => caches.delete(k))).catch(() => {});
   }
 }
 

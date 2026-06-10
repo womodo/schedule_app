@@ -64,13 +64,6 @@ const Sync = {
     event.updated_at = Date.now();
     event._dirty = true;
     await DB.putEvent(event);
-    // Background Sync 登録（対応ブラウザのみ。未対応でも下の run() で同期）
-    if ("serviceWorker" in navigator && "SyncManager" in window) {
-      try {
-        const reg = await navigator.serviceWorker.ready;
-        await reg.sync.register("sync-events");
-      } catch (_) {}
-    }
     this.run();
   },
 
@@ -86,12 +79,6 @@ const Sync = {
     document.addEventListener("visibilitychange", () => {
       if (document.visibilityState === "visible") this.run();
     });
-    // SW からの同期要求
-    if ("serviceWorker" in navigator) {
-      navigator.serviceWorker.addEventListener("message", (e) => {
-        if (e.data && e.data.type === "do-sync") this.run();
-      });
-    }
     // 定期同期（オンライン時のみ意味を持つ）
     setInterval(() => {
       if (navigator.onLine) this.run();
