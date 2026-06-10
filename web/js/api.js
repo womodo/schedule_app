@@ -1,13 +1,25 @@
 /* api.js — サーバー REST API の薄いラッパー。 */
 
 const API = {
+  // モバイル回線では navigator.onLine=true でも自宅サーバーに届かないことがある。
+  // タイムアウトを設け、届かない時はすぐ失敗→オフライン扱いにして画面を待たせない。
+  TIMEOUT_MS: 6000,
+
   async _json(method, path, body) {
-    const res = await fetch(path, {
-      method,
-      headers: body ? { "Content-Type": "application/json" } : {},
-      credentials: "same-origin",
-      body: body ? JSON.stringify(body) : undefined,
-    });
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), this.TIMEOUT_MS);
+    let res;
+    try {
+      res = await fetch(path, {
+        method,
+        headers: body ? { "Content-Type": "application/json" } : {},
+        credentials: "same-origin",
+        body: body ? JSON.stringify(body) : undefined,
+        signal: ctrl.signal,
+      });
+    } finally {
+      clearTimeout(timer);
+    }
     if (res.status === 401) {
       const err = new Error("unauthorized");
       err.code = 401;

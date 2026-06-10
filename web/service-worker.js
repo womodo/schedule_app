@@ -1,7 +1,7 @@
 /* Service Worker — アプリ本体をキャッシュしてオフラインでも起動できるようにする。
    ※ API(/api/*) はキャッシュしない。データは IndexedDB がオフラインの真実とする。 */
 
-const CACHE = "schedule_app-v20";
+const CACHE = "schedule_app-v21";
 
 // オフライン起動に必要な「アプリの殻(App Shell)」
 const APP_SHELL = [
@@ -38,10 +38,23 @@ self.addEventListener("fetch", (event) => {
   // API はキャッシュ介入しない（必ずネットワーク、失敗はアプリ側で処理）
   if (url.pathname.startsWith("/api/")) return;
 
-  // 画面遷移(ナビゲーション)は network-first → 失敗時にキャッシュした殻を返す
+  // 画面遷移(ナビゲーション)は cache-first（即表示）＋裏で更新(stale-while-revalidate)。
+  //   network-first だと外出先で届かない自宅サーバーのタイムアウトを待ってしまい表示が遅い。
   if (req.mode === "navigate") {
     event.respondWith(
-      fetch(req).catch(() => caches.match("/index.html"))
+      caches.match("/index.html").then((cached) => {
+        const network = fetch(req)
+          .then((resp) => {
+            if (resp.ok) {
+              const copy = resp.clone();
+              caches.open(CACHE).then((c) => c.put("/index.html", copy));
+            }
+            return resp;
+          })
+          .catch(() => cached);
+        // キャッシュがあれば即返し、更新はバックグラウンドで実施。初回のみネット待ち。
+        return cached || network;
+      })
     );
     return;
   }
