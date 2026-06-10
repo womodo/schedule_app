@@ -14,6 +14,7 @@ const state = {
   rangeTo: "",
   search: "",
   hiddenUsers: new Set(),  // 表示を消している人の id
+  touchedUsers: new Set(), // 人フィルタを明示操作した人の id（初期フィルタの対象外にする）
   tags: [],                // タグマスタ [{id,name,color}]
 };
 
@@ -269,7 +270,19 @@ function render() {
   else renderMonth();
 }
 
+// 初期は「自分のみ表示」。未操作の他人は非表示、自分は表示にする
+// （後から同期で増えた人も既定で非表示にして自分のみを保つ）。
+function applyDefaultPeopleFilter() {
+  if (!state.user) return;
+  Object.values(state.users).forEach((u) => {
+    if (state.touchedUsers.has(u.id)) return; // 明示操作済みは尊重
+    if (u.id === state.user.id) state.hiddenUsers.delete(u.id);
+    else state.hiddenUsers.add(u.id);
+  });
+}
+
 function renderPeopleFilter() {
+  applyDefaultPeopleFilter();
   const box = $("people-filter");
   box.innerHTML = "";
   const users = Object.values(state.users).sort((a, b) =>
@@ -281,6 +294,7 @@ function renderPeopleFilter() {
     chip.className = "person-chip" + (state.hiddenUsers.has(u.id) ? " off" : "");
     chip.innerHTML = `<span class="dot" style="background:${u.color}"></span>${u.display_name}`;
     chip.onclick = () => {
+      state.touchedUsers.add(u.id);
       if (state.hiddenUsers.has(u.id)) state.hiddenUsers.delete(u.id);
       else state.hiddenUsers.add(u.id);
       render();
