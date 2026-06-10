@@ -543,9 +543,11 @@ function openModal(ev, dateStr) {
   const date = dateStr || (ev && ev.start ? ev.start.slice(0, 10) : todayStr());
   $("ev-title").value = ev ? ev.title : "";
   $("ev-allday").checked = ev ? !!ev.all_day : false;
-  $("ev-start-date").value = ev && ev.start ? ev.start.slice(0, 10) : date;
+  const startVal = ev && ev.start ? ev.start.slice(0, 10) : date;
+  $("ev-start-date").value = startVal;
   $("ev-start-time").value = ev && ev.start && ev.start.length > 10 ? ev.start.slice(11, 16) : "09:00";
-  $("ev-end-date").value = ev && ev.end ? ev.end.slice(0, 10) : "";
+  // 終了日の初期値は開始日と同じ（未設定の予定もブランクにしない）
+  $("ev-end-date").value = ev && ev.end ? ev.end.slice(0, 10) : startVal;
   $("ev-end-time").value = ev && ev.end && ev.end.length > 10 ? ev.end.slice(11, 16) : "";
   $("ev-location").value = ev ? ev.location || "" : "";
   TagBox.init(ev && ev.tags ? ev.tags : []);
@@ -948,6 +950,11 @@ function bindUI() {
   $("ev-delete").onclick = deleteEvent;
   $("event-form").addEventListener("submit", saveEvent);
   $("ev-allday").addEventListener("change", toggleTimeInputs);
+  // 開始日を変えたとき、終了日が未入力か開始より前なら開始日に合わせる
+  $("ev-start-date").addEventListener("change", (e) => {
+    const end = $("ev-end-date");
+    if (!end.value || end.value < e.target.value) end.value = e.target.value;
+  });
   $("event-modal").addEventListener("click", (e) => {
     if (e.target.id === "event-modal") closeModal();
   });
