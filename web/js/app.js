@@ -166,6 +166,32 @@ function eventColor(ev) {
   return (owner && owner.color) || "#2563eb";
 }
 
+// ---- 予定バーの濃淡（終日=濃い目／それ以外=薄目） ----
+function hexToRgb(hex) {
+  const h = String(hex || "").replace("#", "");
+  const v = h.length === 3 ? h.split("").map((c) => c + c).join("") : h;
+  const n = parseInt(v, 16);
+  if (v.length !== 6 || !Number.isFinite(n)) return [37, 99, 235]; // 既定 #2563eb
+  return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+}
+function mixRgb(a, b, t) {
+  return [0, 1, 2].map((i) => Math.round(a[i] + (b[i] - a[i]) * t));
+}
+function rgbCss(c) { return `rgb(${c[0]}, ${c[1]}, ${c[2]})`; }
+
+// 終日: 元の色そのまま＝濃い目（白文字）。それ以外: 白寄りに薄めて同系の濃い文字。
+function eventBarStyle(ev) {
+  const base = hexToRgb(eventColor(ev));
+  if (ev.all_day) {
+    return { background: rgbCss(base), color: "#fff", accent: "" };
+  }
+  return {
+    background: rgbCss(mixRgb(base, [255, 255, 255], 0.72)),
+    color: rgbCss(mixRgb(base, [0, 0, 0], 0.35)),
+    accent: rgbCss(base),
+  };
+}
+
 function tagColor(name) {
   const t = state.tags.find((x) => x.name === name);
   return (t && t.color) || "#64748b";
@@ -383,7 +409,10 @@ function renderWeek(weekStart, vis, today) {
     const bar = document.createElement("div");
     bar.className = "evbar" +
       (seg.contLeft ? " cont-left" : "") + (seg.contRight ? " cont-right" : "");
-    bar.style.background = eventColor(seg.ev);
+    const st = eventBarStyle(seg.ev);
+    bar.style.background = st.background;
+    bar.style.color = st.color;
+    if (st.accent && !seg.contLeft) bar.style.borderLeft = `3px solid ${st.accent}`;
     bar.style.gridColumn = `${seg.sIdx + 1} / ${seg.eIdx + 2}`;
     bar.style.gridRow = String(seg.lane + 1);
     const ev = seg.ev;
