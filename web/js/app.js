@@ -685,7 +685,8 @@ const TagBox = {
       const item = document.createElement("div");
       item.className = "tagopt";
       item.innerHTML = `<span class="dot" style="background:${t.color}"></span>${t.name}`;
-      item.onmousedown = (e) => { e.preventDefault(); this.add(t.name); this.afterPick(); };
+      // pointerdown はフォーカス移動より前に発火し、タッチでも確実に拾える
+      item.onpointerdown = (e) => { e.preventDefault(); this.add(t.name); this.afterPick(); };
       menu.appendChild(item);
     });
 
@@ -695,7 +696,7 @@ const TagBox = {
       const create = document.createElement("div");
       create.className = "tagopt create";
       create.textContent = `＋「${query.trim()}」を追加`;
-      create.onmousedown = (e) => { e.preventDefault(); this.add(query.trim()); this.afterPick(); };
+      create.onpointerdown = (e) => { e.preventDefault(); this.add(query.trim()); this.afterPick(); };
       menu.appendChild(create);
     }
 
@@ -806,7 +807,7 @@ const PartBox = {
       const item = document.createElement("div");
       item.className = "tagopt";
       item.innerHTML = `<span class="dot" style="background:${u.color}"></span>${u.display_name}`;
-      item.onmousedown = (e) => { e.preventDefault(); this.pick(u.id); };
+      item.onpointerdown = (e) => { e.preventDefault(); this.pick(u.id); };
       menu.appendChild(item);
     });
     // 自由入力（ユーザー名と完全一致しない入力は「追加」候補）
@@ -817,7 +818,7 @@ const PartBox = {
       const create = document.createElement("div");
       create.className = "tagopt create";
       create.textContent = `＋「${q}」を追加（ユーザー以外）`;
-      create.onmousedown = (e) => { e.preventDefault(); this.pick(q); };
+      create.onpointerdown = (e) => { e.preventDefault(); this.pick(q); };
       menu.appendChild(create);
     }
     menu.hidden = menu.children.length === 0;
