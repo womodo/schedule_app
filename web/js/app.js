@@ -418,7 +418,7 @@ function renderWeek(weekStart, vis, today) {
     const ev = seg.ev;
     const timed = !ev.all_day && !seg.contLeft && ev.start && ev.start.length > 10;
     bar.textContent =
-      (ev.private ? "🔒" : "") + (timed ? ev.start.slice(11, 16) + " " : "") + ev.title;
+      (ev.private ? "🔒" : "") + ev.title + (timed ? " " + ev.start.slice(11, 16) : "");
     bar.onclick = (e) => { e.stopPropagation(); openModal(ev); };
     overlay.appendChild(bar);
   }
