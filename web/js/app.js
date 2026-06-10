@@ -211,7 +211,10 @@ function allTagOptions() {
 function visibleEvents() {
   const q = state.search.trim().toLowerCase();
   return state.events.filter((ev) => {
-    if (state.hiddenUsers.has(ev.owner_id)) return false;
+    // 人フィルタ: 作成者＋参加者のうち実ユーザーで、1人でも表示中なら出す
+    // （自由入力の参加者はチップが無くフィルタ対象外なので除外）
+    const people = [ev.owner_id, ...(ev.participants || [])].filter((id) => state.users[id]);
+    if (people.length && people.every((id) => state.hiddenUsers.has(id))) return false;
     if (q) {
       const tags = (ev.tags || []).join(" ");
       const hay = `${ev.title} ${ev.description || ""} ${ev.location || ""} ${tags}`.toLowerCase();
