@@ -742,20 +742,25 @@ const TagBox = {
   },
 };
 
-// 候補のタップ選択。click だと「キーボードを閉じる最初のタップ」に食われて
-// 発火しないことがあるため、pointerup で「指が動いていないタップ」を判定して選ぶ。
-// 指が動いた場合（＝スクロール）は選択しない。
+// 候補のタップ選択。
+// Android Chrome では overflow スクロール領域内のタッチが pointercancel になり、
+// またキーボード表示中は click がタップに食われて発火しないことがある。
+// そこで touch では touchend（指が動いていない＝タップ）で選び、PC では click を使う。
 function bindTap(el, handler) {
-  let x = 0, y = 0, t = 0, ok = false;
-  el.addEventListener("pointerdown", (e) => { x = e.clientX; y = e.clientY; t = Date.now(); ok = true; });
-  el.addEventListener("pointermove", (e) => {
-    if (Math.abs(e.clientX - x) > 10 || Math.abs(e.clientY - y) > 10) ok = false;
+  let sx = 0, sy = 0, moved = false, touched = false;
+  el.addEventListener("touchstart", (e) => {
+    const t = e.touches[0];
+    sx = t.clientX; sy = t.clientY; moved = false; touched = true;
+  }, { passive: true });
+  el.addEventListener("touchmove", (e) => {
+    const t = e.touches[0];
+    if (Math.abs(t.clientX - sx) > 10 || Math.abs(t.clientY - sy) > 10) moved = true;
+  }, { passive: true });
+  el.addEventListener("touchend", (e) => {
+    if (!moved) { e.preventDefault(); handler(e); } // preventDefault で擬似 click とキーボード消費を抑止
   });
-  el.addEventListener("pointercancel", () => { ok = false; });
-  el.addEventListener("pointerup", (e) => {
-    if (ok && Date.now() - t < 700) { e.preventDefault(); handler(e); }
-    ok = false;
-  });
+  // マウス（PC）用。touch では上で preventDefault するため click は発火せず二重にならない。
+  el.addEventListener("click", (e) => { if (!touched) handler(e); });
 }
 
 function bindTagBox() {
