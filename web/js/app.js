@@ -742,25 +742,30 @@ const TagBox = {
   },
 };
 
-// 候補のタップ選択。
-// Android Chrome では overflow スクロール領域内のタッチが pointercancel になり、
-// またキーボード表示中は click がタップに食われて発火しないことがある。
-// そこで touch では touchend（指が動いていない＝タップ）で選び、PC では click を使う。
+// 候補のタップ選択。環境差が大きいので：
+//  - タッチ（Android/iPhone）: touchend で「指が動いていない＝タップ」を判定。
+//    Android Chrome は overflow スクロール内で pointercancel/click が成立しないため。
+//  - マウス/ペン（PC）: pointerup で選択（PC では確実に発火）。
+//  - 直前が touch 由来の pointerup は時間ガードで無視し、二重発火を防ぐ。
 function bindTap(el, handler) {
-  let sx = 0, sy = 0, moved = false, touched = false;
+  let sx = 0, sy = 0, moved = false, lastTouch = 0;
   el.addEventListener("touchstart", (e) => {
     const t = e.touches[0];
-    sx = t.clientX; sy = t.clientY; moved = false; touched = true;
+    sx = t.clientX; sy = t.clientY; moved = false;
   }, { passive: true });
   el.addEventListener("touchmove", (e) => {
     const t = e.touches[0];
     if (Math.abs(t.clientX - sx) > 10 || Math.abs(t.clientY - sy) > 10) moved = true;
   }, { passive: true });
   el.addEventListener("touchend", (e) => {
+    lastTouch = Date.now();
     if (!moved) { e.preventDefault(); handler(e); } // preventDefault で擬似 click とキーボード消費を抑止
   });
-  // マウス（PC）用。touch では上で preventDefault するため click は発火せず二重にならない。
-  el.addEventListener("click", (e) => { if (!touched) handler(e); });
+  el.addEventListener("pointerup", (e) => {
+    if (e.pointerType === "touch") return;          // タッチは touchend で処理済み
+    if (Date.now() - lastTouch < 700) return;       // touch 由来の保険
+    handler(e);
+  });
 }
 
 function bindTagBox() {
