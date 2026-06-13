@@ -4,8 +4,8 @@ After=network.target
 
 [Service]
 User=pi
-WorkingDirectory=/home/pi/schedule_app/server
-ExecStart=/home/pi/schedule_app/server/.venv/bin/gunicorn -c gunicorn.conf.py wsgi:app
+WorkingDirectory=/home/pi/apps/schedule/server
+ExecStart=/home/pi/apps/schedule/server/.venv/bin/gunicorn -c gunicorn.conf.py wsgi:app
 Restart=always
 RestartSec=3
 

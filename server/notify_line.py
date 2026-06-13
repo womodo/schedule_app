@@ -26,7 +26,7 @@
   python notify_line.py --date 2026-06-07   # 指定日の予定を通知（テスト用）
 
 cron 例（毎朝6:00・JST想定）:
-  0 6 * * *  cd /home/pi/schedule_app/server && .venv/bin/python notify_line.py >> notify.log 2>&1
+  0 6 * * *  cd /home/pi/apps/schedule/server && .venv/bin/python notify_line.py >> notify.log 2>&1
 """
 
 import argparse

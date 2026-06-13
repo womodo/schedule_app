@@ -1187,7 +1187,7 @@ function bindAdmin() {
   $("atab-export").onclick = () => switchAdminTab("export");
   $("export-csv").onclick = () => {
     const a = document.createElement("a");
-    a.href = "/api/admin/events.csv";
+    a.href = "api/admin/events.csv";
     a.click(); // Content-Disposition によりダウンロードされる
   };
 

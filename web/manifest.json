@@ -2,8 +2,8 @@
   "name": "みんなの予定表",
   "short_name": "予定表",
   "description": "家族・チームで共有するカレンダー（オフライン対応）",
-  "start_url": "/",
-  "scope": "/",
+  "start_url": "./",
+  "scope": "./",
   "display": "standalone",
   "orientation": "portrait-primary",
   "background_color": "#f1f5f9",
@@ -11,7 +11,7 @@
   "lang": "ja",
   "icons": [
     {
-      "src": "/icons/icon.svg",
+      "src": "icons/icon.svg",
       "sizes": "any",
       "type": "image/svg+xml",
       "purpose": "any maskable"
