@@ -708,8 +708,8 @@ const TagBox = {
       const item = document.createElement("div");
       item.className = "tagopt";
       item.innerHTML = `<span class="dot" style="background:${t.color}"></span>${t.name}`;
-      // pointerdown はフォーカス移動より前に発火し、タッチでも確実に拾える
-      item.onpointerdown = (e) => { e.preventDefault(); this.add(t.name); this.afterPick(); };
+      // click（タップ離し）で選択。スクロール中の誤選択を避ける。
+      item.onclick = () => { this.add(t.name); this.afterPick(); };
       menu.appendChild(item);
     });
 
@@ -719,7 +719,7 @@ const TagBox = {
       const create = document.createElement("div");
       create.className = "tagopt create";
       create.textContent = `＋「${query.trim()}」を追加`;
-      create.onpointerdown = (e) => { e.preventDefault(); this.add(query.trim()); this.afterPick(); };
+      create.onclick = () => { this.add(query.trim()); this.afterPick(); };
       menu.appendChild(create);
     }
 
@@ -768,7 +768,10 @@ function bindTagBox() {
       TagBox.closeMenu();
     }
   });
-  input.addEventListener("blur", () => setTimeout(() => TagBox.closeMenu(), 120));
+  // 枠外を触ったら閉じる（blur では閉じない＝タップ取りこぼし防止）
+  document.addEventListener("pointerdown", (e) => {
+    if (!e.target.closest("#tagbox")) TagBox.closeMenu();
+  });
 }
 
 // ===========================================================================
@@ -830,7 +833,7 @@ const PartBox = {
       const item = document.createElement("div");
       item.className = "tagopt";
       item.innerHTML = `<span class="dot" style="background:${u.color}"></span>${u.display_name}`;
-      item.onpointerdown = (e) => { e.preventDefault(); this.pick(u.id); };
+      item.onclick = () => this.pick(u.id);
       menu.appendChild(item);
     });
     // 自由入力（ユーザー名と完全一致しない入力は「追加」候補）
@@ -841,7 +844,7 @@ const PartBox = {
       const create = document.createElement("div");
       create.className = "tagopt create";
       create.textContent = `＋「${q}」を追加（ユーザー以外）`;
-      create.onpointerdown = (e) => { e.preventDefault(); this.pick(q); };
+      create.onclick = () => this.pick(q);
       menu.appendChild(create);
     }
     menu.hidden = menu.children.length === 0;
@@ -876,7 +879,10 @@ function bindPartBox() {
       PartBox.closeMenu();
     }
   });
-  input.addEventListener("blur", () => setTimeout(() => PartBox.closeMenu(), 120));
+  // 枠外を触ったら閉じる（blur では閉じない＝タップ取りこぼし防止）
+  document.addEventListener("pointerdown", (e) => {
+    if (!e.target.closest("#partbox")) PartBox.closeMenu();
+  });
 }
 
 async function saveEvent(e) {
