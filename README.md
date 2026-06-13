@@ -209,8 +209,29 @@ crontab -e
 ```
 ラズパイの時刻が日本になっているか確認: `timedatectl`（必要なら `sudo timedatectl set-timezone Asia/Tokyo`）。
 
-> 各自に「自分が参加する予定だけ」を個別配信したい場合は、アプリのユーザーと LINE userId を
-> 紐づける拡張が必要です（今回は家族向けに、全員へ当日分をまとめて送る方式）。
+### 5-5. 予定がある人にだけ個別送信する（per-user モード・任意）
+
+全員へまとめて送る代わりに、**各自が作成者または参加者になっている翌日予定だけ**を、その人の
+LINE に個別 push 送信できます（予定が無い人には送りません）。本人宛なので**非公開予定も含めて**通知します。
+
+1. 各自が一度、公式アカウントのトークで **アカウント連携**しておく（→ 6-3。`連携 ユーザーID パスワード`）。
+   これで `users.line_user_id` が登録され、個別送信の宛先になります。
+2. `server/line_config.json` に `"per_user": true` を足す（または cron で `--per-user` を付ける）:
+   ```json
+   {
+     "channel_access_token": "（チャネルアクセストークン）",
+     "to": [],
+     "per_user": true
+   }
+   ```
+3. 動作確認・cron 例:
+   ```bash
+   uv run python notify_line.py --per-user --dry-run    # 誰に何が送られるか表示
+   # cron（毎朝6:00）
+   0 6 * * *  cd /home/pi/schedule_app/server && /home/pi/schedule_app/server/.venv/bin/python notify_line.py >> notify.log 2>&1
+   ```
+   > `--per-user` は `line_config.json` の `per_user` より優先されます。`per_user: true` にしてあれば
+   > cron 側はオプション無しでOKです。連携していない人には届きません（その人の分は送られません）。
 
 ---
 
