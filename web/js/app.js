@@ -708,8 +708,7 @@ const TagBox = {
       const item = document.createElement("div");
       item.className = "tagopt";
       item.innerHTML = `<span class="dot" style="background:${t.color}"></span>${t.name}`;
-      // click（タップ離し）で選択。スクロール中の誤選択を避ける。
-      item.onclick = () => { this.add(t.name); this.afterPick(); };
+      bindTap(item, () => { this.add(t.name); this.afterPick(); });
       menu.appendChild(item);
     });
 
@@ -719,7 +718,7 @@ const TagBox = {
       const create = document.createElement("div");
       create.className = "tagopt create";
       create.textContent = `＋「${query.trim()}」を追加`;
-      create.onclick = () => { this.add(query.trim()); this.afterPick(); };
+      bindTap(create, () => { this.add(query.trim()); this.afterPick(); });
       menu.appendChild(create);
     }
 
@@ -742,6 +741,22 @@ const TagBox = {
     return this.selected.slice();
   },
 };
+
+// 候補のタップ選択。click だと「キーボードを閉じる最初のタップ」に食われて
+// 発火しないことがあるため、pointerup で「指が動いていないタップ」を判定して選ぶ。
+// 指が動いた場合（＝スクロール）は選択しない。
+function bindTap(el, handler) {
+  let x = 0, y = 0, t = 0, ok = false;
+  el.addEventListener("pointerdown", (e) => { x = e.clientX; y = e.clientY; t = Date.now(); ok = true; });
+  el.addEventListener("pointermove", (e) => {
+    if (Math.abs(e.clientX - x) > 10 || Math.abs(e.clientY - y) > 10) ok = false;
+  });
+  el.addEventListener("pointercancel", () => { ok = false; });
+  el.addEventListener("pointerup", (e) => {
+    if (ok && Date.now() - t < 700) { e.preventDefault(); handler(e); }
+    ok = false;
+  });
+}
 
 function bindTagBox() {
   const input = $("tagbox-input");
@@ -833,7 +848,7 @@ const PartBox = {
       const item = document.createElement("div");
       item.className = "tagopt";
       item.innerHTML = `<span class="dot" style="background:${u.color}"></span>${u.display_name}`;
-      item.onclick = () => this.pick(u.id);
+      bindTap(item, () => this.pick(u.id));
       menu.appendChild(item);
     });
     // 自由入力（ユーザー名と完全一致しない入力は「追加」候補）
@@ -844,7 +859,7 @@ const PartBox = {
       const create = document.createElement("div");
       create.className = "tagopt create";
       create.textContent = `＋「${q}」を追加（ユーザー以外）`;
-      create.onclick = () => this.pick(q);
+      bindTap(create, () => this.pick(q));
       menu.appendChild(create);
     }
     menu.hidden = menu.children.length === 0;
