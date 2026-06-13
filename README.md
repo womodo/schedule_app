@@ -121,21 +121,42 @@ journalctl -u schedule-gunicorn -f             # ログ確認
 > ポートは `server/gunicorn.conf.py` の `bind = "127.0.0.1:5001"` で指定。
 > systemd は `.venv/bin/gunicorn` を直接呼ぶため、uv で作った `.venv` のまま動きます。
 
+> **⚠️ 移設時の注意**: アプリの置き場所を変えた／このユニットを更新したときは、必ず
+> `sudo cp .../deploy/schedule-gunicorn.service /etc/systemd/system/ && sudo systemctl daemon-reload && sudo systemctl restart schedule-gunicorn`
+> を実行してください。これを忘れると Gunicorn が**旧 `WorkingDirectory` の古い静的ファイルを配信し続け**、
+> 新しい画面に切り替わりません（CSS/JS が古いまま等の原因No.1）。
+
 ### 2-2. nginx で /schedule に振り分け
-同梱の `deploy/nginx-schedule.conf` が、`/schedule` を Gunicorn(:5001) へ転送する location 断片です。
+nginx をパス振り分けの前段にします。**Raspberry Pi OS 標準の `default` サイト**（`listen 80 default_server`）の
+`server { ... }` の中に `/schedule` の location を**追記**するのが手早く確実です（専用ファイルを別に作って
+`location` を `server` の外に置くと無効になり 404 になります）。
 ```bash
 sudo apt install -y nginx
+sudo nano /etc/nginx/sites-available/default
 ```
-共有の server ブロック（例 `/etc/nginx/sites-available/raspi` を作って `sites-enabled` にリンク）の
-`server { listen 80; ... }` の中に、`deploy/nginx-schedule.conf` の中身を貼り付けます。
-他アプリ（study/wbgt/stats）の location も同じ server ブロックに並べます（書き方の例はファイル冒頭のコメント参照）。
+`server_name _;` の行のすぐ下に、同梱 `deploy/nginx-schedule.conf` の中身（下記）を貼り付けます：
+```nginx
+        # --- 予定表アプリ: /schedule を Gunicorn(:5001) へ ---
+        location = /schedule { return 301 /schedule/; }   # 末尾スラッシュを強制（相対パス配信の前提）
+        location /schedule/ {
+                proxy_pass http://127.0.0.1:5001/;        # 末尾の "/" が /schedule を剥がして Flask に渡す
+                proxy_set_header Host              $host;
+                proxy_set_header X-Real-IP         $remote_addr;
+                proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+                proxy_set_header X-Forwarded-Proto https;  # 体感は https（Secure Cookie 用）
+                proxy_read_timeout 60s;
+        }
+```
+反映：
 ```bash
-sudo nginx -t            # 設定の文法チェック
+sudo nginx -t                       # 設定の文法チェック（syntax is ok / test is successful）
 sudo systemctl reload nginx
+curl -i http://127.0.0.1/schedule/  # 200 + HTML が返れば成功
 ```
-> ポイント: `location /schedule/ { proxy_pass http://127.0.0.1:5001/; }` の **proxy_pass 末尾の `/`** が
-> `/schedule` を取り除いてから Flask へ渡すため、アプリ側のルート定義は無改修のまま動きます。
-> フロントは相対パス配信なので、`/schedule`（末尾スラッシュ無し）は `/schedule/` へ301する設定も含みます。
+- **proxy_pass 末尾の `/`** が `/schedule` を取り除いてから Flask へ渡すため、アプリ側のルート定義は無改修で動きます。
+- フロントは相対パス配信なので、末尾スラッシュ無しの `/schedule` は `/schedule/` へ301します。
+- 同じ Pi の `/wbgt` `/stats`（PHP）は同じ `default` サイトの php-fpm 設定で配信され、`/study` 等を足すときも
+  この server ブロックに `location` を並べるだけです（他アプリの location 例は `deploy/nginx-schedule.conf` 冒頭コメント参照）。
 
 ### 2-3. tailscale serve で公開（VPN内のみ・HTTPS）
 ```bash
